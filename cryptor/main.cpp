@@ -26,16 +26,15 @@ try
 
 	int fs = file_size(i_file);
 	
-	uint8_t* buffer = new uint8_t[fs]; 
-	i_file.read(reinterpret_cast<char*>(buffer), fs);
+	std::vector<uint8_t> buffer(fs); 
+	i_file.read(reinterpret_cast<char*>(buffer.data()), fs);
 
-	IMAGE_DOS_HEADER* dos_h = reinterpret_cast<IMAGE_DOS_HEADER*>(buffer);
+	IMAGE_DOS_HEADER* dos_h = reinterpret_cast<IMAGE_DOS_HEADER*>(buffer.data());
 	if (dos_h->e_magic != IMAGE_DOS_SIGNATURE) // first test is this file true PE?
 		throw std::runtime_error("This file is not PE");
 
 	std::cout << "OK!\n";
 	std::cin.get();
-	delete[] buffer;
 }
 catch (std::exception& e)
 {
