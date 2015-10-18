@@ -6,28 +6,23 @@
 #include <windows.h>
 #include <stdint.h>
 
-void open_file(std::ifstream& i_file)
-{
-	std::string s_file = "";
-	s_file = "C:/cryptor.exe"; //s_file = "C:/cryptor.exe";//std::cin >> s_file;
+static const std::string cryptorFilename("C:/cryptor.exe"); // till we don't get path from argv[]
 
-	i_file.open(s_file, std::ios::binary);
-	if (!i_file)
-		throw std::runtime_error("File not exist");
-}
 int file_size(std::ifstream& i_file)
 {
+	std::streampos fpos = i_file.tellg();
 	i_file.seekg(0, std::ios::end);
 	int fs = static_cast<int>(i_file.tellg());
-	i_file.seekg(0);
+	i_file.seekg(fpos);
 	return fs;
 }
 
 int main()
 try
 {
-	std::ifstream i_file;
-	open_file(i_file);
+	std::ifstream i_file(cryptorFilename, std::ifstream::binary);
+	if (i_file.fail())
+		throw std::runtime_error("Failed to open file");
 
 	int fs = file_size(i_file);
 	
