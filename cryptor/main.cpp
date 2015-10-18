@@ -34,11 +34,12 @@ try
 		throw std::runtime_error("This file is not PE");
 
 	std::cout << "OK!\n";
-	std::cin.get();
+
+	return 0;
 }
 catch (std::exception& e)
 {
 	std::cout << "Exception: " << e.what() << std::endl;
-	std::cin.get();
+
 	return 1;
 }
