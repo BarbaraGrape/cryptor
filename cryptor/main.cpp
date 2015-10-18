@@ -4,8 +4,7 @@
 #include <stdexcept>
 
 #include <windows.h>
-
-typedef unsigned char uchar;
+#include <stdint.h>
 
 void open_file(std::ifstream& i_file)
 {
@@ -32,7 +31,7 @@ try
 
 	int fs = file_size(i_file);
 	
-	uchar* buffer = new uchar[fs]; 
+	uint8_t* buffer = new uint8_t[fs]; 
 	i_file.read(reinterpret_cast<char*>(buffer), fs);
 
 	IMAGE_DOS_HEADER* dos_h = reinterpret_cast<IMAGE_DOS_HEADER*>(buffer);
