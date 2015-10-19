@@ -4,48 +4,42 @@
 #include <stdexcept>
 
 #include <windows.h>
+#include <stdint.h>
 
-typedef unsigned char uchar;
+static const std::string cryptorFilename("C:/cryptor.exe"); // till we don't get path from argv[]
 
-void open_file(std::ifstream& i_file)
-{
-	std::string s_file = "";
-	s_file = "C:/cryptor.exe"; //s_file = "C:/cryptor.exe";//std::cin >> s_file;
-
-	i_file.open(s_file, std::ios::binary);
-	if (!i_file)
-		throw std::runtime_error("File not exist");
-}
 int file_size(std::ifstream& i_file)
 {
+	std::streampos fpos = i_file.tellg();
 	i_file.seekg(0, std::ios::end);
 	int fs = static_cast<int>(i_file.tellg());
-	i_file.seekg(0);
+	i_file.seekg(fpos);
 	return fs;
 }
 
 int main()
 try
 {
-	std::ifstream i_file;
-	open_file(i_file);
+	std::ifstream i_file(cryptorFilename, std::ifstream::binary);
+	if (i_file.fail())
+		throw std::runtime_error("Failed to open file");
 
 	int fs = file_size(i_file);
 	
-	uchar* buffer = new uchar[fs]; 
-	i_file.read(reinterpret_cast<char*>(buffer), fs);
+	std::vector<uint8_t> buffer(fs); 
+	i_file.read(reinterpret_cast<char*>(buffer.data()), fs);
 
-	IMAGE_DOS_HEADER* dos_h = reinterpret_cast<IMAGE_DOS_HEADER*>(buffer);
+	IMAGE_DOS_HEADER* dos_h = reinterpret_cast<IMAGE_DOS_HEADER*>(buffer.data());
 	if (dos_h->e_magic != IMAGE_DOS_SIGNATURE) // first test is this file true PE?
 		throw std::runtime_error("This file is not PE");
 
 	std::cout << "OK!\n";
-	std::cin.get();
-	delete[] buffer;
+
+	return 0;
 }
 catch (std::exception& e)
 {
 	std::cout << "Exception: " << e.what() << std::endl;
-	std::cin.get();
+
 	return 1;
 }
