@@ -9,6 +9,7 @@
 
 static const std::string cryptorFilename("C:/cryptor.exe"); // till we don't get path from argv[]
 static const int EXECUTABLE_FILE = 0x2;
+static const int SIGNATURE_32BIT = 267;
 
 int file_size(std::ifstream& i_file)
 {
@@ -40,10 +41,11 @@ try
 		throw std::runtime_error("This file is not PE");
 
 	if ((nt_h->FileHeader.Characteristics & EXECUTABLE_FILE) == 0)
-		throw std::runtime_error("This isn't executable file");
+		throw std::runtime_error("This isn't executable file"); // only for exe yet
 
 	IMAGE_OPTIONAL_HEADER* opt_h = &nt_h->OptionalHeader;
-	std::cout << opt_h->Magic << std::endl;
+	if (opt_h->Magic != SIGNATURE_32BIT)
+		throw std::runtime_error("This file isn't 32 bit"); 
 
 	std::cout << "OK!\n";
 
