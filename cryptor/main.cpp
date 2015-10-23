@@ -7,7 +7,8 @@
 #include <windows.h>
 #include <stdint.h>
 
-static const std::string cryptorFilename("C:/cryptor.exe"); // till we don't get path from argv[]
+static const std::string cryptorFilename("C:/dev/test/cryptor.exe"); // till we don't get path from argv[]
+static const std::string cryptorNewFilename("C:/dev/test/cryptorCrypted.exe");
 static const int EXECUTABLE_FILE = 0x2;
 static const int SIGNATURE_32BIT = 267;
 
@@ -46,6 +47,9 @@ try
 	IMAGE_OPTIONAL_HEADER* opt_h = &nt_h->OptionalHeader;
 	if (opt_h->Magic != SIGNATURE_32BIT)
 		throw std::runtime_error("This file isn't 32 bit"); 
+	
+	std::ofstream o_file(cryptorNewFilename, std::ofstream::binary | std::ofstream::out | std::ofstream::trunc);
+	o_file.write(reinterpret_cast<char*>(buffer.data()), fs);
 
 	std::cout << "OK!\n";
 
