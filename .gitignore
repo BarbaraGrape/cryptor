@@ -1,0 +1,7 @@
+cryptor.sdf
+cryptor.opensdf
+cryptor.suo
+Debug/
+ipch/
+cryptor/Debug/
+cryptor/cryptor.vcxproj.*
