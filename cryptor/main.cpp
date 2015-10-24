@@ -7,10 +7,12 @@
 #include <windows.h>
 #include <stdint.h>
 
-static const std::string cryptorFilename("C:/dev/test/cryptor.exe"); // till we don't get path from argv[]
-static const std::string cryptorNewFilename("C:/dev/test/cryptorCrypted.exe");
-static const int EXECUTABLE_FILE = 0x2;
-static const int SIGNATURE_32BIT = 267;
+#include "crypt.h"
+
+static const std::string cryptorFilename("C:/dev/test/mine.exe"); // till we don't get path from argv[]
+static const std::string cryptorNewFilename("C:/dev/test/mineCrypted.exe");
+
+static const uint8_t XOR_MASK = 242;
 
 int file_size(std::ifstream& i_file)
 {
@@ -41,13 +43,21 @@ try
 	if (nt_h->Signature != IMAGE_NT_SIGNATURE)
 		throw std::runtime_error("This file is not PE");
 
-	if ((nt_h->FileHeader.Characteristics & EXECUTABLE_FILE) == 0)
+	if ((nt_h->FileHeader.Characteristics & IMAGE_FILE_EXECUTABLE_IMAGE) == 0)
 		throw std::runtime_error("This isn't executable file"); // only for exe yet
 
 	IMAGE_OPTIONAL_HEADER* opt_h = &nt_h->OptionalHeader;
-	if (opt_h->Magic != SIGNATURE_32BIT)
+	if (opt_h->Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC)
 		throw std::runtime_error("This file isn't 32 bit"); 
-	
+
+	IMAGE_SECTION_HEADER* sec_h = reinterpret_cast<IMAGE_SECTION_HEADER*>(opt_h+1);
+	for (int i = 0; i < nt_h->FileHeader.NumberOfSections; ++i)
+		if (sec_h->Characteristics & IMAGE_SCN_CNT_CODE)
+			break;
+	// crypt code section
+	crypt_chunk(buffer.data() + sec_h->PointerToRawData, sec_h->SizeOfRawData, XOR_MASK);
+
+	//open file for output 
 	std::ofstream o_file(cryptorNewFilename, std::ofstream::binary | std::ofstream::out | std::ofstream::trunc);
 	o_file.write(reinterpret_cast<char*>(buffer.data()), fs);
 
