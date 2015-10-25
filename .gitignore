@@ -2,6 +2,7 @@ cryptor.sdf
 cryptor.opensdf
 cryptor.suo
 Debug/
+Release/
 ipch/
 cryptor/Debug/
-cryptor/cryptor.vcxproj.*
+cryptor/Release/

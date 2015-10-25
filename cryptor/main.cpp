@@ -1,3 +1,5 @@
+#pragma optimize("", off)
+
 #include <iostream>
 #include <string>
 #include <fstream>
@@ -9,10 +11,10 @@
 
 #include "crypt.h"
 
-static const std::string cryptorFilename("C:/dev/test/mine.exe"); // till we don't get path from argv[]
+static const std::string cryptorFilename("C:/dev/test/notepad++.exe"); // till we don't get path from argv[]
 static const std::string cryptorNewFilename("C:/dev/test/mineCrypted.exe");
 
-static const uint8_t XOR_MASK = 242;
+static const uint32_t XOR_MASK = 242;
 
 int file_size(std::ifstream& i_file)
 {
@@ -23,7 +25,7 @@ int file_size(std::ifstream& i_file)
 	return fs;
 }
 
-int main()
+int main(void)
 try
 {
 	std::ifstream i_file(cryptorFilename, std::ifstream::binary);
@@ -54,8 +56,43 @@ try
 	for (int i = 0; i < nt_h->FileHeader.NumberOfSections; ++i)
 		if (sec_h->Characteristics & IMAGE_SCN_CNT_CODE)
 			break;
-	// crypt code section
+	//
+#ifdef _DEBUG
+#error Can't calcute correct difference of functions address
+#endif
+	uint32_t stub_size = reinterpret_cast<uint32_t>(end_point) - reinterpret_cast<uint32_t>(crypt_chunk);
+
+	std::cout << stub_size << std::endl;
+
 	crypt_chunk(buffer.data() + sec_h->PointerToRawData, sec_h->SizeOfRawData, XOR_MASK);
+
+	int offset_free = sec_h->PointerToRawData + sec_h->Misc.VirtualSize; // where we can put our code
+
+	uint32_t stub_rva = offset_free + 1;
+	while (stub_rva % 16)
+		stub_rva++;
+
+	int gap = stub_rva - offset_free;
+
+	if (stub_size > (sec_h->SizeOfRawData - stub_rva))
+		throw std::runtime_error("No space to write stub");
+
+	std::memset(buffer.data() + offset_free, 0, sec_h->SizeOfRawData - sec_h->Misc.VirtualSize);
+	std::memcpy(buffer.data() + stub_rva, crypt_chunk, stub_size);
+
+	//set stub correct params
+	uint32_t new_entry_fn =  (stub_rva + reinterpret_cast<uint32_t>(new_entry_point) - reinterpret_cast<uint32_t>(crypt_chunk));
+	std::memcpy(buffer.data() + new_entry_fn + MASK_OFFSET, &XOR_MASK, 4);
+	std::memcpy(buffer.data() + new_entry_fn + SIZE_OFFSET, &sec_h->Misc.VirtualSize, 4);
+	int point_begin_chunk = opt_h->ImageBase + sec_h->VirtualAddress;
+	std::memcpy(buffer.data() + new_entry_fn + CHUNK_OFFSET, &point_begin_chunk, 4);
+	int old_entry_point = opt_h->AddressOfEntryPoint + opt_h->ImageBase;
+	std::memcpy(buffer.data() + new_entry_fn + OLD_ENTRY_OFFSET, &old_entry_point, 4);
+	
+	//set new entry point
+	opt_h->AddressOfEntryPoint	 = new_entry_fn + sec_h->VirtualAddress - sec_h->PointerToRawData;
+	sec_h->Characteristics		|= 0xE0000060;
+	sec_h->Misc.VirtualSize		+= gap + stub_size;
 
 	//open file for output 
 	std::ofstream o_file(cryptorNewFilename, std::ofstream::binary | std::ofstream::out | std::ofstream::trunc);
