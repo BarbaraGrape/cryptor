@@ -11,7 +11,7 @@
 
 #include "crypt.h"
 
-static const std::string cryptorFilename("C:/dev/test/notepad++.exe"); // till we don't get path from argv[]
+static const std::string cryptorFilename("C:/dev/test/cryptor.exe"); // till we don't get path from argv[]
 static const std::string cryptorNewFilename("C:/dev/test/mineCrypted.exe");
 
 static const uint32_t XOR_MASK = 242;
@@ -73,8 +73,7 @@ try
 		stub_rva++;
 
 	int gap = stub_rva - offset_free;
-
-	if (stub_size > (sec_h->SizeOfRawData - stub_rva))
+	if (stub_size + gap > (sec_h->SizeOfRawData - sec_h->Misc.VirtualSize))
 		throw std::runtime_error("No space to write stub");
 
 	std::memset(buffer.data() + offset_free, 0, sec_h->SizeOfRawData - sec_h->Misc.VirtualSize);
@@ -82,12 +81,15 @@ try
 
 	//set stub correct params
 	uint32_t new_entry_fn =  (stub_rva + reinterpret_cast<uint32_t>(new_entry_point) - reinterpret_cast<uint32_t>(crypt_chunk));
-	std::memcpy(buffer.data() + new_entry_fn + MASK_OFFSET, &XOR_MASK, 4);
-	std::memcpy(buffer.data() + new_entry_fn + SIZE_OFFSET, &sec_h->Misc.VirtualSize, 4);
+	int new_entry_point = new_entry_fn + sec_h->VirtualAddress - sec_h->PointerToRawData + opt_h->ImageBase + 5;
+	std::memcpy(buffer.data() + new_entry_fn + 7, &new_entry_point, 4);
 	int point_begin_chunk = opt_h->ImageBase + sec_h->VirtualAddress;
-	std::memcpy(buffer.data() + new_entry_fn + CHUNK_OFFSET, &point_begin_chunk, 4);
+	std::memcpy(buffer.data() + new_entry_fn + 13, &point_begin_chunk, 4);
+	std::memcpy(buffer.data() + new_entry_fn + 18, &XOR_MASK, 4);
+	std::memcpy(buffer.data() + new_entry_fn + 23, &sec_h->Misc.VirtualSize, 4);
+
 	int old_entry_point = opt_h->AddressOfEntryPoint + opt_h->ImageBase;
-	std::memcpy(buffer.data() + new_entry_fn + OLD_ENTRY_OFFSET, &old_entry_point, 4);
+	std::memcpy(buffer.data() + new_entry_fn + 35, &old_entry_point, 4);
 	
 	//set new entry point
 	opt_h->AddressOfEntryPoint	 = new_entry_fn + sec_h->VirtualAddress - sec_h->PointerToRawData;

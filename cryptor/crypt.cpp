@@ -13,12 +13,17 @@ __declspec(naked) void __stdcall new_entry_point(void)
 {
 	__asm
 	{
-		push	0xFAFAFAFA
+		call	get_eip
+get_eip:
+		pop		eax
+		sub		eax, 0xFDFDFDFD // delta
+		lea		ebx, [eax + 0xFAFAFAFA]
 		push	0xFBFBFBFB
 		push	0xFCFCFCFC
+		push	ebx
 		call	crypt_chunk
 
-		mov		eax, 0xFDFDFDFD
+		lea		ebx, [eax + 0xFDFDFDFD]
 		jmp		eax
 	}
 }
