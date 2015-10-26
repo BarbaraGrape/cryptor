@@ -56,6 +56,9 @@ try
 	for (int i = 0; i < nt_h->FileHeader.NumberOfSections; ++i)
 		if (sec_h->Characteristics & IMAGE_SCN_CNT_CODE)
 			break;
+		else
+			sec_h++;
+
 	//
 #ifdef _DEBUG
 #error Can't calcute correct difference of functions address
@@ -100,6 +103,19 @@ try
 	IMAGE_DATA_DIRECTORY* data_reloc = &opt_h->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
 	data_reloc->Size = 0;
 	data_reloc->VirtualAddress = NULL;
+	// try to find relocation table
+	bool found = false;
+	IMAGE_SECTION_HEADER* reloc_h = reinterpret_cast<IMAGE_SECTION_HEADER*>(opt_h+1);
+	for (int i = 0; i < nt_h->FileHeader.NumberOfSections; ++i)
+		if (std::strcmp(reinterpret_cast<char*>(reloc_h->Name), ".reloc") == 0)
+		{
+			found = true;
+			break;
+		}
+		else
+			reloc_h++;
+	if (!found)
+		throw std::runtime_error("Can't find relocation table");
 
 	//open file for output 
 	std::ofstream o_file(cryptorNewFilename, std::ofstream::binary | std::ofstream::out | std::ofstream::trunc);
