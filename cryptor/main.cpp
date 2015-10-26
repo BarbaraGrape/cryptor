@@ -82,19 +82,24 @@ try
 	//set stub correct params
 	uint32_t new_entry_fn =  (stub_rva + reinterpret_cast<uint32_t>(new_entry_point) - reinterpret_cast<uint32_t>(crypt_chunk));
 	int new_entry_point = new_entry_fn + sec_h->VirtualAddress - sec_h->PointerToRawData + opt_h->ImageBase + 5;
-	std::memcpy(buffer.data() + new_entry_fn + 7, &new_entry_point, 4);
+	std::memcpy(buffer.data() + new_entry_fn + 8, &new_entry_point, 4);
 	int point_begin_chunk = opt_h->ImageBase + sec_h->VirtualAddress;
-	std::memcpy(buffer.data() + new_entry_fn + 13, &point_begin_chunk, 4);
-	std::memcpy(buffer.data() + new_entry_fn + 18, &XOR_MASK, 4);
-	std::memcpy(buffer.data() + new_entry_fn + 23, &sec_h->Misc.VirtualSize, 4);
+	std::memcpy(buffer.data() + new_entry_fn + 14, &point_begin_chunk, 4);
+	std::memcpy(buffer.data() + new_entry_fn + 20, &XOR_MASK, 4);
+	std::memcpy(buffer.data() + new_entry_fn + 25, &sec_h->Misc.VirtualSize, 4);
 
 	int old_entry_point = opt_h->AddressOfEntryPoint + opt_h->ImageBase;
-	std::memcpy(buffer.data() + new_entry_fn + 35, &old_entry_point, 4);
+	std::memcpy(buffer.data() + new_entry_fn + 38, &old_entry_point, 4);
 	
 	//set new entry point
 	opt_h->AddressOfEntryPoint	 = new_entry_fn + sec_h->VirtualAddress - sec_h->PointerToRawData;
 	sec_h->Characteristics		|= 0xE0000060;
 	sec_h->Misc.VirtualSize		+= gap + stub_size;
+
+	// relocation
+	IMAGE_DATA_DIRECTORY* data_reloc = &opt_h->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
+	data_reloc->Size = 0;
+	data_reloc->VirtualAddress = NULL;
 
 	//open file for output 
 	std::ofstream o_file(cryptorNewFilename, std::ofstream::binary | std::ofstream::out | std::ofstream::trunc);
