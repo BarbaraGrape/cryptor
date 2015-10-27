@@ -11,7 +11,7 @@
 
 #include "crypt.h"
 
-static const std::string cryptorFilename("C:/dev/test/cryptor.exe"); // till we don't get path from argv[]
+static const std::string cryptorFilename("C:/dev/test/notepad++.exe"); // till we don't get path from argv[]
 static const std::string cryptorNewFilename("C:/dev/test/mineCrypted.exe");
 
 static const uint32_t XOR_MASK = 242;
@@ -76,23 +76,24 @@ try
 		stub_rva++;
 
 	int gap = stub_rva - offset_free;
-	if (stub_size + gap > (sec_h->SizeOfRawData - sec_h->Misc.VirtualSize))
-		throw std::runtime_error("No space to write stub");
+	//if (stub_size + gap > (sec_h->SizeOfRawData - sec_h->Misc.VirtualSize))
+	//	throw std::runtime_error("No space to write stub");
 
 	std::memset(buffer.data() + offset_free, 0, sec_h->SizeOfRawData - sec_h->Misc.VirtualSize);
 	std::memcpy(buffer.data() + stub_rva, crypt_chunk, stub_size);
 
 	//set stub correct params
 	uint32_t new_entry_fn =  (stub_rva + reinterpret_cast<uint32_t>(new_entry_point) - reinterpret_cast<uint32_t>(crypt_chunk));
-	int new_entry_point = new_entry_fn + sec_h->VirtualAddress - sec_h->PointerToRawData + opt_h->ImageBase + 5;
-	std::memcpy(buffer.data() + new_entry_fn + 8, &new_entry_point, 4);
+	int new_entry_point = new_entry_fn + sec_h->VirtualAddress - sec_h->PointerToRawData + opt_h->ImageBase + 8;
+	std::memcpy(buffer.data() + new_entry_fn + 11, &new_entry_point, 4);
 	int point_begin_chunk = opt_h->ImageBase + sec_h->VirtualAddress;
-	std::memcpy(buffer.data() + new_entry_fn + 14, &point_begin_chunk, 4);
-	std::memcpy(buffer.data() + new_entry_fn + 20, &XOR_MASK, 4);
-	std::memcpy(buffer.data() + new_entry_fn + 25, &sec_h->Misc.VirtualSize, 4);
+	std::memcpy(buffer.data() + new_entry_fn + 20, &point_begin_chunk, 4);
+	std::memcpy(buffer.data() + new_entry_fn + 29, &XOR_MASK, 4);
+	std::memcpy(buffer.data() + new_entry_fn + 34, &sec_h->Misc.VirtualSize, 4);
 
+	
 	int old_entry_point = opt_h->AddressOfEntryPoint + opt_h->ImageBase;
-	std::memcpy(buffer.data() + new_entry_fn + 38, &old_entry_point, 4);
+	std::memcpy(buffer.data() + new_entry_fn + 77, &old_entry_point, 4);
 	
 	//set new entry point
 	opt_h->AddressOfEntryPoint	 = new_entry_fn + sec_h->VirtualAddress - sec_h->PointerToRawData;
@@ -113,10 +114,16 @@ try
 			break;
 		}
 		else
+		{
+			reloc_h->Characteristics |= IMAGE_SCN_MEM_WRITE;
 			reloc_h++;
+		}
 	if (!found)
 		throw std::runtime_error("Can't find relocation table");
 
+	int p_relocation = opt_h->ImageBase + reloc_h->VirtualAddress;
+	std::memcpy(buffer.data() + new_entry_fn + 49, &p_relocation, 4);
+	std::memcpy(buffer.data() + new_entry_fn + 62, &reloc_h->Misc.VirtualSize, 4);
 	//open file for output 
 	std::ofstream o_file(cryptorNewFilename, std::ofstream::binary | std::ofstream::out | std::ofstream::trunc);
 	o_file.write(reinterpret_cast<char*>(buffer.data()), fs);
