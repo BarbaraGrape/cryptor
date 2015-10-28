@@ -16,6 +16,11 @@ static const std::string cryptorNewFilename("C:/dev/test/mineCrypted.exe");
 
 static const uint32_t XOR_MASK = 242;
 
+inline uint32_t get_fn_ptr(void* fn)
+{
+	return reinterpret_cast<uint32_t>(fn);
+}
+
 int file_size(std::ifstream& i_file)
 {
 	std::streampos fpos = i_file.tellg();
@@ -63,40 +68,48 @@ try
 #ifdef _DEBUG
 #error Can't calcute correct difference of functions address
 #endif
-	uint32_t stub_size = reinterpret_cast<uint32_t>(end_point) - reinterpret_cast<uint32_t>(crypt_chunk);
-
-	std::cout << stub_size << std::endl;
+	int stub_size = get_fn_ptr(end_point) - get_fn_ptr(crypt_chunk);
 
 	crypt_chunk(buffer.data() + sec_h->PointerToRawData, sec_h->SizeOfRawData, XOR_MASK);
+	/* 
+		rva - relative addres in mem
+		pf - pointer in file
+		pi - pointer in mem + ImageBase
+	*/
 
-	int offset_free = sec_h->PointerToRawData + sec_h->Misc.VirtualSize; // where we can put our code
+	int end_code_pf = sec_h->PointerToRawData + sec_h->Misc.VirtualSize; // where we can put our code
+	int free_space_size = sec_h->SizeOfRawData - sec_h->Misc.VirtualSize; // space that we can use
+	int end_code_rva = sec_h->VirtualAddress + sec_h->Misc.VirtualSize;
+	uint32_t stub_pf = end_code_pf;
+	while (stub_pf % 16)
+		stub_pf++;
 
-	uint32_t stub_rva = offset_free + 1;
-	while (stub_rva % 16)
-		stub_rva++;
+	int gap = stub_pf - end_code_pf;
+	if (stub_size + gap > free_space_size)
+		throw std::runtime_error("No space to write stub");
+	int stub_rva = end_code_rva + gap;
 
-	int gap = stub_rva - offset_free;
-	//if (stub_size + gap > (sec_h->SizeOfRawData - sec_h->Misc.VirtualSize))
-	//	throw std::runtime_error("No space to write stub");
-
-	std::memset(buffer.data() + offset_free, 0, sec_h->SizeOfRawData - sec_h->Misc.VirtualSize);
-	std::memcpy(buffer.data() + stub_rva, crypt_chunk, stub_size);
+	std::memset(buffer.data() + end_code_pf, 0, free_space_size);
+	std::memcpy(buffer.data() + stub_pf, crypt_chunk, stub_size);
 
 	//set stub correct params
-	uint32_t new_entry_fn =  (stub_rva + reinterpret_cast<uint32_t>(new_entry_point) - reinterpret_cast<uint32_t>(crypt_chunk));
-	int new_entry_point = new_entry_fn + sec_h->VirtualAddress - sec_h->PointerToRawData + opt_h->ImageBase + 8;
-	std::memcpy(buffer.data() + new_entry_fn + 11, &new_entry_point, 4);
-	int point_begin_chunk = opt_h->ImageBase + sec_h->VirtualAddress;
-	std::memcpy(buffer.data() + new_entry_fn + 20, &point_begin_chunk, 4);
-	std::memcpy(buffer.data() + new_entry_fn + 29, &XOR_MASK, 4);
-	std::memcpy(buffer.data() + new_entry_fn + 34, &sec_h->Misc.VirtualSize, 4);
+	int nep_offset	= get_fn_ptr(new_entry_point) - get_fn_ptr(crypt_chunk);
+	uint32_t nep_pf = stub_pf + nep_offset;
+	int nep_rva		= stub_rva+ nep_offset;
+	int nep_pi		= stub_rva+ nep_offset + opt_h->ImageBase + 8; // with offset.. sub, call and ect see asm code
+	std::memcpy(buffer.data() + nep_pf + 11, &nep_pi, 4);
+
+	int code_begin_pi = opt_h->ImageBase + sec_h->VirtualAddress;
+	std::memcpy(buffer.data() + nep_pf + 20, &code_begin_pi, 4);
+	std::memcpy(buffer.data() + nep_pf + 29, &XOR_MASK, 4);
+	std::memcpy(buffer.data() + nep_pf + 34, &sec_h->Misc.VirtualSize, 4);
 
 	
-	int old_entry_point = opt_h->AddressOfEntryPoint + opt_h->ImageBase;
-	std::memcpy(buffer.data() + new_entry_fn + 77, &old_entry_point, 4);
+	int oep_pi = opt_h->AddressOfEntryPoint + opt_h->ImageBase;
+	std::memcpy(buffer.data() + nep_pf + 77, &oep_pi, 4);
 	
 	//set new entry point
-	opt_h->AddressOfEntryPoint	 = new_entry_fn + sec_h->VirtualAddress - sec_h->PointerToRawData;
+	opt_h->AddressOfEntryPoint	 = nep_rva;
 	sec_h->Characteristics		|= 0xE0000060;
 	sec_h->Misc.VirtualSize		+= gap + stub_size;
 
@@ -121,9 +134,10 @@ try
 	if (!found)
 		throw std::runtime_error("Can't find relocation table");
 
-	int p_relocation = opt_h->ImageBase + reloc_h->VirtualAddress;
-	std::memcpy(buffer.data() + new_entry_fn + 49, &p_relocation, 4);
-	std::memcpy(buffer.data() + new_entry_fn + 62, &reloc_h->Misc.VirtualSize, 4);
+	int reloc_begin_pi = opt_h->ImageBase + reloc_h->VirtualAddress;
+	std::memcpy(buffer.data() + nep_pf + 49, &reloc_begin_pi, 4);
+	std::memcpy(buffer.data() + nep_pf + 62, &reloc_h->Misc.VirtualSize, 4);
+
 	//open file for output 
 	std::ofstream o_file(cryptorNewFilename, std::ofstream::binary | std::ofstream::out | std::ofstream::trunc);
 	o_file.write(reinterpret_cast<char*>(buffer.data()), fs);
