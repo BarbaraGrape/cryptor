@@ -11,8 +11,8 @@
 
 #include "crypt.h"
 
-static const std::string cryptorFilename("C:/dev/test/notepad++.exe"); // till we don't get path from argv[]
-static const std::string cryptorNewFilename("C:/dev/test/mineCrypted.exe");
+static const std::string cryptorFilename("C:/dev/test/a.exe"); // till we don't get path from argv[]
+static const std::string cryptorNewFilename("C:/dev/test/crypted.exe");
 
 static const uint32_t XOR_MASK = 242;
 
@@ -131,12 +131,18 @@ try
 			reloc_h->Characteristics |= IMAGE_SCN_MEM_WRITE;
 			reloc_h++;
 		}
-	if (!found)
-		throw std::runtime_error("Can't find relocation table");
 
-	int reloc_begin_pi = opt_h->ImageBase + reloc_h->VirtualAddress;
-	std::memcpy(buffer.data() + nep_pf + 49, &reloc_begin_pi, 4);
-	std::memcpy(buffer.data() + nep_pf + 62, &reloc_h->Misc.VirtualSize, 4);
+	if (found)
+	{
+		int reloc_begin_pi = opt_h->ImageBase + reloc_h->VirtualAddress;
+		std::memcpy(buffer.data() + nep_pf + 49, &reloc_begin_pi, 4);
+		std::memcpy(buffer.data() + nep_pf + 62, &reloc_h->Misc.VirtualSize, 4);
+	} 
+	else
+	{
+		int zero = 0;
+		std::memcpy(buffer.data() + nep_pf + 62, &zero, 4);
+	}
 
 	//open file for output 
 	std::ofstream o_file(cryptorNewFilename, std::ofstream::binary | std::ofstream::out | std::ofstream::trunc);
