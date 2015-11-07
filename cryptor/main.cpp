@@ -11,7 +11,7 @@
 
 #include "crypt.h"
 
-static const std::string cryptorFilename("C:/dev/test/a.exe"); // till we don't get path from argv[]
+static const std::string cryptorFilename("C:/dev/test/minimal.exe"); // till we don't get path from argv[]
 static const std::string cryptorNewFilename("C:/dev/test/crypted.exe");
 
 static const uint32_t XOR_MASK = 242;

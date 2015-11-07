@@ -6,3 +6,5 @@ Release/
 ipch/
 cryptor/Debug/
 cryptor/Release/
+cryptor/cryptor.vcxproj.user
+minimal/minimal.vcxproj.user

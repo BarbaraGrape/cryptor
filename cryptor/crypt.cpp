@@ -16,6 +16,8 @@ void __stdcall rebase(BYTE* ptable, uint32_t size, int diff, int base)
 	while ( ptable < pend )
 	{
 		IMAGE_BASE_RELOCATION* rel = reinterpret_cast<IMAGE_BASE_RELOCATION*>(ptable);
+		if (!(rel->SizeOfBlock)) 
+			break;
 		for (WORD* p = reinterpret_cast<WORD*>(ptable + sizeof(IMAGE_BASE_RELOCATION)); p <  reinterpret_cast<WORD*>(ptable + rel->SizeOfBlock); p++)
 		{
 			int type = (*p & 0xf000) >> 12;
