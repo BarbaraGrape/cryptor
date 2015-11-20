@@ -16,6 +16,15 @@ static const std::string cryptorNewFilename("C:/dev/test/crypted.exe");
 
 static const uint32_t XOR_MASK = 242;
 
+/*
+	Берём .код секцию. В её конце пишем наш код, после него массив с важными данными и инфу из
+	старой релок секции. Саму .релок секцию перезаполним на наш новый код а потом запихнём инфу,
+	которая там была.
+*/
+inline int align(int begin, int alignment)
+{
+	begin += alignment - (begin % alignment);
+}
 inline uint32_t get_fn_ptr(void* fn)
 {
 	return reinterpret_cast<uint32_t>(fn);
@@ -57,12 +66,12 @@ try
 	if (opt_h->Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC)
 		throw std::runtime_error("This file isn't 32 bit"); 
 
-	IMAGE_SECTION_HEADER* sec_h = reinterpret_cast<IMAGE_SECTION_HEADER*>(opt_h+1);
+	IMAGE_SECTION_HEADER* code_sec = reinterpret_cast<IMAGE_SECTION_HEADER*>(opt_h+1);
 	for (int i = 0; i < nt_h->FileHeader.NumberOfSections; ++i)
-		if (sec_h->Characteristics & IMAGE_SCN_CNT_CODE)
+		if (code_sec->Characteristics & IMAGE_SCN_CNT_CODE)
 			break;
 		else
-			sec_h++;
+			code_sec++;
 
 	//
 #ifdef _DEBUG
@@ -70,80 +79,79 @@ try
 #endif
 	int stub_size = get_fn_ptr(end_point) - get_fn_ptr(crypt_chunk);
 
-	crypt_chunk(buffer.data() + sec_h->PointerToRawData, sec_h->SizeOfRawData, XOR_MASK);
+	crypt_chunk(buffer.data() + code_sec->PointerToRawData, code_sec->SizeOfRawData, XOR_MASK);
 	/* 
 		rva - relative addres in mem
 		pf - pointer in file
-		pi - pointer in mem + ImageBase
+		va - pointer in mem + ImageBase
 	*/
 
-	int end_code_pf = sec_h->PointerToRawData + sec_h->Misc.VirtualSize; // where we can put our code
-	int free_space_size = sec_h->SizeOfRawData - sec_h->Misc.VirtualSize; // space that we can use
-	int end_code_rva = sec_h->VirtualAddress + sec_h->Misc.VirtualSize;
+	int end_code_pf = code_sec->PointerToRawData + code_sec->Misc.VirtualSize; // where we can put our code
+	int free_space_size = code_sec->SizeOfRawData - code_sec->Misc.VirtualSize; // space that we can use
+	int end_code_rva = code_sec->VirtualAddress + code_sec->Misc.VirtualSize;
 	uint32_t stub_pf = end_code_pf;
-	while (stub_pf % 16)
-		stub_pf++;
+	
+	stub_pf = align(stub_pf, 16);
 
 	int gap = stub_pf - end_code_pf;
-	if (stub_size + gap > free_space_size)
+	if (gap + stub_size + sizeof(Some_data) > free_space_size)
 		throw std::runtime_error("No space to write stub");
 	int stub_rva = end_code_rva + gap;
 
 	std::memset(buffer.data() + end_code_pf, 0, free_space_size);
 	std::memcpy(buffer.data() + stub_pf, crypt_chunk, stub_size);
-
+	
 	//set stub correct params
 	int nep_offset	= get_fn_ptr(new_entry_point) - get_fn_ptr(crypt_chunk);
 	uint32_t nep_pf = stub_pf + nep_offset;
 	int nep_rva		= stub_rva+ nep_offset;
-	int nep_pi		= stub_rva+ nep_offset + opt_h->ImageBase + 8; // with offset.. sub, call and ect see asm code
-	std::memcpy(buffer.data() + nep_pf + 11, &nep_pi, 4);
+	int nep_va		= stub_rva+ nep_offset + opt_h->ImageBase + 5; // with offset.. sub, call and ect see asm code
 
-	int code_begin_pi = opt_h->ImageBase + sec_h->VirtualAddress;
-	std::memcpy(buffer.data() + nep_pf + 20, &code_begin_pi, 4);
-	std::memcpy(buffer.data() + nep_pf + 29, &XOR_MASK, 4);
-	std::memcpy(buffer.data() + nep_pf + 34, &sec_h->Misc.VirtualSize, 4);
+	int code_begin_va = opt_h->ImageBase + code_sec->VirtualAddress;
 
-	
-	int oep_pi = opt_h->AddressOfEntryPoint + opt_h->ImageBase;
-	std::memcpy(buffer.data() + nep_pf + 77, &oep_pi, 4);
+	int oep_va = opt_h->AddressOfEntryPoint + opt_h->ImageBase;
 	
 	//set new entry point
 	opt_h->AddressOfEntryPoint	 = nep_rva;
-	sec_h->Characteristics		|= 0xE0000060;
-	sec_h->Misc.VirtualSize		+= gap + stub_size;
+	code_sec->Characteristics		|= 0xE0000060;
+	code_sec->Misc.VirtualSize		+= gap + stub_size;
 
 	// relocation
 	IMAGE_DATA_DIRECTORY* data_reloc = &opt_h->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
 	data_reloc->Size = 0;
 	data_reloc->VirtualAddress = NULL;
 	// try to find relocation table
-	bool found = false;
-	IMAGE_SECTION_HEADER* reloc_h = reinterpret_cast<IMAGE_SECTION_HEADER*>(opt_h+1);
+	bool found_reloc = false;
+	IMAGE_SECTION_HEADER* reloc_sec = reinterpret_cast<IMAGE_SECTION_HEADER*>(opt_h+1);
 	for (int i = 0; i < nt_h->FileHeader.NumberOfSections; ++i)
-		if (std::strcmp(reinterpret_cast<char*>(reloc_h->Name), ".reloc") == 0)
+		if (std::strcmp(reinterpret_cast<char*>(reloc_sec->Name), ".reloc") == 0)
 		{
-			found = true;
+			found_reloc = true;
 			break;
 		}
 		else
 		{
-			reloc_h->Characteristics |= IMAGE_SCN_MEM_WRITE;
-			reloc_h++;
+			reloc_sec->Characteristics |= IMAGE_SCN_MEM_WRITE;
+			reloc_sec++;
 		}
 
-	if (found)
+	Some_data inform;
+	inform.nep_va = nep_va;
+	inform.cb_va = code_begin_va;
+	inform.xor_mask = XOR_MASK;
+	inform.code_vsize = code_sec->Misc.VirtualSize;
+	inform.oep_va = oep_va;
+	if (found_reloc)
 	{
-		int reloc_begin_pi = opt_h->ImageBase + reloc_h->VirtualAddress;
-		std::memcpy(buffer.data() + nep_pf + 49, &reloc_begin_pi, 4);
-		std::memcpy(buffer.data() + nep_pf + 62, &reloc_h->Misc.VirtualSize, 4);
-	} 
-	else
-	{
-		int zero = 0;
-		std::memcpy(buffer.data() + nep_pf + 62, &zero, 4);
+		inform.br_va = opt_h->ImageBase + reloc_sec->VirtualAddress;
+		inform.reloc_vsize = reloc_sec->Misc.VirtualSize;
 	}
+	else
+		inform.reloc_vsize = 0;
 
+	IMAGE_SECTION_HEADER* new_sec = reloc_sec + 1; // in idea it clean section
+	new_sec->PointerToRawData = reloc_sec->PointerToRawData + reloc_sec->SizeOfRawData; //after ather .reloc section
+	
 	//open file for output 
 	std::ofstream o_file(cryptorNewFilename, std::ofstream::binary | std::ofstream::out | std::ofstream::trunc);
 	o_file.write(reinterpret_cast<char*>(buffer.data()), fs);

@@ -43,30 +43,43 @@ __declspec(naked) void __stdcall new_entry_point(void)
 {
 	__asm
 	{
-		sub		esp, 8
 		call	get_eip
 get_eip:
-		pop		ecx
-		sub		ecx, 0xFDFDFDFD // delta
+		pop		ecx // ecx is address of new_entry_point + 5
+
+		sub		esp, 8
+		mov		ebp, 0xFAFAFAFA // address of struct
+		sub		ecx, [ebp]Some_data.nep_va // delta
 		mov		[esp], ecx // delta
-		lea		ebx, [ecx + 0xFAFAFAFA]
+		mov		eax, [ebp]Some_data.cb_va
+		lea		ebx, [ecx + eax]
 		mov		[esp+4], ebx // base
-		push	0xFBFBFBFB
-		push	0xFCFCFCFC
+
+		push	ebp // for save
+
+		push	[ebp]Some_data.xor_mask
+		push	[ebp]Some_data.code_vsize
 		push	ebx
 		call	crypt_chunk
 
+		pop		ebp
+		push	ebp
+
 		//call rebasing
-		mov		ecx, [esp]
-		lea  	edx, [ecx + 0xF1F1F1F1]
-		push	[esp+4] // base
-		push	[esp+4] // diff
-		push	0xF2F2F2F2 // size of .reloc
+		mov		ecx, [esp+4]
+		mov		ebx, [ebp]Some_data.br_va
+		lea  	edx, [ecx + edx]
+		push	[esp+8] // base
+		push	[esp+8] // diff
+		push	[ebp]Some_data.reloc_vsize // size of .reloc
 		push	edx // point to .reloc
 		call	rebase
 
+		pop		ebp
+
+		mov		eax, [ebp]Some_data.oep_va
 		mov		ecx, [esp]
-		lea		ebx, [ecx + 0xFDFDFDFD]
+		lea		ebx, [ecx + eax]
 		add		esp, 8
 		jmp		ebx
 	}
