@@ -38,6 +38,46 @@ int file_size(std::ifstream& i_file)
 	i_file.seekg(fpos);
 	return fs;
 }
+IMAGE_SECTION_HEADER* get_code_section(IMAGE_NT_HEADERS* nt_h) // find first code section
+{ //return null if can't find code_section
+	if (nt_h == NULL)
+		return NULL;
+	void *p = nt_h + 1;
+	IMAGE_SECTION_HEADER* sec = static_cast<IMAGE_SECTION_HEADER*>(p);
+	bool found = false;
+
+	for (int i = 0; i < nt_h->FileHeader.NumberOfSections; ++i)
+		if (sec->Characteristics & IMAGE_SCN_CNT_CODE)
+		{
+			found = true;
+			break;
+		}
+		else
+			sec++;
+	return found ? sec : NULL;
+}
+IMAGE_SECTION_HEADER* get_reloc_section(IMAGE_NT_HEADERS* nt_h)
+{
+	if ((nt_h == NULL) || (nt_h->FileHeader.Characteristics & IMAGE_FILE_RELOCS_STRIPPED)) // second condtion for case, when .reloc section absent
+		return NULL;
+	
+	IMAGE_DATA_DIRECTORY* entry_reloc = &nt_h->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
+	
+	void* p = nt_h + 1;
+	IMAGE_SECTION_HEADER* sec = static_cast<IMAGE_SECTION_HEADER*>(p);
+	bool found = false;
+
+	for (int i = 0; i < nt_h->FileHeader.NumberOfSections; ++i)
+		if (sec->VirtualAddress == entry_reloc->VirtualAddress)
+		{
+			found = true;
+			break;
+		}
+		else
+			sec++;
+
+	return found ? sec : NULL;
+}
 
 int main(void)
 try
@@ -66,12 +106,12 @@ try
 	if (opt_h->Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC)
 		throw std::runtime_error("This file isn't 32 bit"); 
 
-	IMAGE_SECTION_HEADER* code_sec = reinterpret_cast<IMAGE_SECTION_HEADER*>(opt_h+1);
-	for (int i = 0; i < nt_h->FileHeader.NumberOfSections; ++i)
-		if (code_sec->Characteristics & IMAGE_SCN_CNT_CODE)
-			break;
-		else
-			code_sec++;
+	IMAGE_SECTION_HEADER* code_sec = get_code_section(nt_h);
+	if (code_sec == NULL)
+		throw std::runtime_error("Code section is absent");
+
+	IMAGE_SECTION_HEADER* reloc_sec = get_reloc_section(nt_h);
+
 
 	//
 #ifdef _DEBUG
@@ -120,20 +160,6 @@ try
 	IMAGE_DATA_DIRECTORY* data_reloc = &opt_h->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
 	data_reloc->Size = 0;
 	data_reloc->VirtualAddress = NULL;
-	// try to find relocation table
-	bool found_reloc = false;
-	IMAGE_SECTION_HEADER* reloc_sec = reinterpret_cast<IMAGE_SECTION_HEADER*>(opt_h+1);
-	for (int i = 0; i < nt_h->FileHeader.NumberOfSections; ++i)
-		if (std::strcmp(reinterpret_cast<char*>(reloc_sec->Name), ".reloc") == 0)
-		{
-			found_reloc = true;
-			break;
-		}
-		else
-		{
-			reloc_sec->Characteristics |= IMAGE_SCN_MEM_WRITE;
-			reloc_sec++;
-		}
 
 	Some_data inform;
 	inform.nep_va = nep_va;
@@ -141,7 +167,7 @@ try
 	inform.xor_mask = XOR_MASK;
 	inform.code_vsize = code_sec->Misc.VirtualSize;
 	inform.oep_va = oep_va;
-	if (found_reloc)
+	if (reloc_sec)
 	{
 		inform.br_va = opt_h->ImageBase + reloc_sec->VirtualAddress;
 		inform.reloc_vsize = reloc_sec->Misc.VirtualSize;
@@ -152,6 +178,7 @@ try
 	IMAGE_SECTION_HEADER* new_sec = reloc_sec + 1; // in idea it clean section
 	new_sec->PointerToRawData = reloc_sec->PointerToRawData + reloc_sec->SizeOfRawData; //after ather .reloc section
 	
+
 	//open file for output 
 	std::ofstream o_file(cryptorNewFilename, std::ofstream::binary | std::ofstream::out | std::ofstream::trunc);
 	o_file.write(reinterpret_cast<char*>(buffer.data()), fs);
