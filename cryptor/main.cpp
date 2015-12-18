@@ -138,23 +138,23 @@ try
 		throw std::runtime_error("No space to write stub");
 	int stub_rva = end_code_rva + gap;
 
-	std::memset(buffer.data() + end_code_pf, 0, free_space_size);
-	std::memcpy(buffer.data() + stub_pf, crypt_chunk, stub_size);
+	std::memset(&buffer[end_code_pf], 0, free_space_size);
+	std::memcpy(&buffer[stub_pf], crypt_chunk, stub_size);
 
 	//set stub correct params
 	int nep_offset	= get_fn_ptr(new_entry_point) - get_fn_ptr(crypt_chunk);
 	uint32_t nep_pf = stub_pf + nep_offset;
 	int nep_rva		= stub_rva+ nep_offset;
 	int nep_pi		= stub_rva+ nep_offset + opt_h->ImageBase + 8; // with offset.. sub, call and ect see asm code
-	std::memcpy(buffer.data() + nep_pf + 11, &nep_pi, 4);
+	std::memcpy(&buffer[nep_pf + 11], &nep_pi, 4);
 
 	int code_begin_pi = opt_h->ImageBase + code_sec->VirtualAddress;
-	std::memcpy(buffer.data() + nep_pf + 20, &code_begin_pi, 4);
-	std::memcpy(buffer.data() + nep_pf + 29, &XOR_MASK, 4);
-	std::memcpy(buffer.data() + nep_pf + 34, &code_sec->Misc.VirtualSize, 4);
+	std::memcpy(&buffer[nep_pf + 20], &code_begin_pi, 4);
+	std::memcpy(&buffer[nep_pf + 29], &XOR_MASK, 4);
+	std::memcpy(&buffer[nep_pf + 34], &code_sec->Misc.VirtualSize, 4);
 
 	int oep_pi = opt_h->AddressOfEntryPoint + opt_h->ImageBase;
-	std::memcpy(buffer.data() + nep_pf + 77, &oep_pi, 4);
+	std::memcpy(&buffer[nep_pf + 77], &oep_pi, 4);
 	
 	//set new entry point
 	opt_h->AddressOfEntryPoint		 = nep_rva;
@@ -170,15 +170,15 @@ try
 	if (reloc_sec)
 	{
 		int reloc_begin_pi = opt_h->ImageBase + reloc_sec->VirtualAddress;
-		std::memcpy(buffer.data() + nep_pf + 49, &reloc_begin_pi, 4);
-		std::memcpy(buffer.data() + nep_pf + 62, &reloc_sec->Misc.VirtualSize, 4);
+		std::memcpy(&buffer[nep_pf + 49], &reloc_begin_pi, 4);
+		std::memcpy(&buffer[nep_pf + 62], &reloc_sec->Misc.VirtualSize, 4);
 
 		reloc_sec->Characteristics &= ~(IMAGE_SCN_MEM_DISCARDABLE);
 	} 
 	else
 	{
 		int zero = 0;
-		std::memcpy(buffer.data() + nep_pf + 62, &zero, 4);
+		std::memcpy(&buffer[nep_pf + 62], &zero, 4);
 	}
 
 	//open file for output 
