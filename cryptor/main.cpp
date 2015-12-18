@@ -16,6 +16,10 @@ static const std::string cryptorNewFilename("C:/dev/test/crypted.exe");
 
 static const uint32_t XOR_MASK = 242;
 
+static void wait_for_input()
+{
+	system("PAUSE");
+}
 inline uint32_t get_fn_ptr(void* fn)
 {
 	return reinterpret_cast<uint32_t>(fn);
@@ -28,6 +32,54 @@ int file_size(std::ifstream& i_file)
 	int fs = static_cast<int>(i_file.tellg());
 	i_file.seekg(fpos);
 	return fs;
+}
+int align(int begin, int alignment)
+{
+	int off = begin % alignment;
+	if (!off)
+		return begin;
+	else
+		return begin + alignment - off;
+}
+IMAGE_SECTION_HEADER* get_code_section(IMAGE_NT_HEADERS* nt_h) // find first code section
+{ //return null if can't find code_section
+	if (nt_h == NULL)
+		return NULL;
+	void *p = nt_h + 1;
+	IMAGE_SECTION_HEADER* sec = static_cast<IMAGE_SECTION_HEADER*>(p);
+	bool found = false;
+
+	for (int i = 0; i < nt_h->FileHeader.NumberOfSections; ++i)
+		if (sec->Characteristics & IMAGE_SCN_CNT_CODE)
+		{
+			found = true;
+			break;
+		}
+		else
+			sec++;
+	return found ? sec : NULL;
+}
+IMAGE_SECTION_HEADER* get_reloc_section(IMAGE_NT_HEADERS* nt_h)
+{
+	if ((nt_h == NULL) || (nt_h->FileHeader.Characteristics & IMAGE_FILE_RELOCS_STRIPPED)) // second condtion for case, when .reloc section absent
+		return NULL;
+	
+	IMAGE_DATA_DIRECTORY* entry_reloc = &nt_h->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
+	
+	void* p = nt_h + 1;
+	IMAGE_SECTION_HEADER* sec = static_cast<IMAGE_SECTION_HEADER*>(p);
+	bool found = false;
+
+	for (int i = 0; i < nt_h->FileHeader.NumberOfSections; ++i)
+		if (sec->VirtualAddress == entry_reloc->VirtualAddress)
+		{
+			found = true;
+			break;
+		}
+		else
+			sec++;
+
+	return found ? sec : NULL;
 }
 
 int main(void)
@@ -57,12 +109,11 @@ try
 	if (opt_h->Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC)
 		throw std::runtime_error("This file isn't 32 bit"); 
 
-	IMAGE_SECTION_HEADER* sec_h = reinterpret_cast<IMAGE_SECTION_HEADER*>(opt_h+1);
-	for (int i = 0; i < nt_h->FileHeader.NumberOfSections; ++i)
-		if (sec_h->Characteristics & IMAGE_SCN_CNT_CODE)
-			break;
-		else
-			sec_h++;
+	IMAGE_SECTION_HEADER* code_sec = get_code_section(nt_h);
+	if (code_sec == NULL)
+		throw std::runtime_error("Code section is absent");
+
+	IMAGE_SECTION_HEADER* reloc_sec = get_reloc_section(nt_h);
 
 	//
 #ifdef _DEBUG
@@ -70,19 +121,17 @@ try
 #endif
 	int stub_size = get_fn_ptr(end_point) - get_fn_ptr(crypt_chunk);
 
-	crypt_chunk(buffer.data() + sec_h->PointerToRawData, sec_h->SizeOfRawData, XOR_MASK);
+	crypt_chunk(buffer.data() + code_sec->PointerToRawData, code_sec->SizeOfRawData, XOR_MASK);
 	/* 
 		rva - relative addres in mem
 		pf - pointer in file
 		pi - pointer in mem + ImageBase
 	*/
 
-	int end_code_pf = sec_h->PointerToRawData + sec_h->Misc.VirtualSize; // where we can put our code
-	int free_space_size = sec_h->SizeOfRawData - sec_h->Misc.VirtualSize; // space that we can use
-	int end_code_rva = sec_h->VirtualAddress + sec_h->Misc.VirtualSize;
-	uint32_t stub_pf = end_code_pf;
-	while (stub_pf % 16)
-		stub_pf++;
+	int end_code_pf = code_sec->PointerToRawData + code_sec->Misc.VirtualSize; // where we can put our code
+	int free_space_size = code_sec->SizeOfRawData - code_sec->Misc.VirtualSize; // space that we can use
+	int end_code_rva = code_sec->VirtualAddress + code_sec->Misc.VirtualSize;
+	uint32_t stub_pf = align(end_code_pf, 16);
 
 	int gap = stub_pf - end_code_pf;
 	if (stub_size + gap > free_space_size)
@@ -99,44 +148,32 @@ try
 	int nep_pi		= stub_rva+ nep_offset + opt_h->ImageBase + 8; // with offset.. sub, call and ect see asm code
 	std::memcpy(buffer.data() + nep_pf + 11, &nep_pi, 4);
 
-	int code_begin_pi = opt_h->ImageBase + sec_h->VirtualAddress;
+	int code_begin_pi = opt_h->ImageBase + code_sec->VirtualAddress;
 	std::memcpy(buffer.data() + nep_pf + 20, &code_begin_pi, 4);
 	std::memcpy(buffer.data() + nep_pf + 29, &XOR_MASK, 4);
-	std::memcpy(buffer.data() + nep_pf + 34, &sec_h->Misc.VirtualSize, 4);
+	std::memcpy(buffer.data() + nep_pf + 34, &code_sec->Misc.VirtualSize, 4);
 
-	
 	int oep_pi = opt_h->AddressOfEntryPoint + opt_h->ImageBase;
 	std::memcpy(buffer.data() + nep_pf + 77, &oep_pi, 4);
 	
 	//set new entry point
-	opt_h->AddressOfEntryPoint	 = nep_rva;
-	sec_h->Characteristics		|= 0xE0000060;
-	sec_h->Misc.VirtualSize		+= gap + stub_size;
+	opt_h->AddressOfEntryPoint		 = nep_rva;
+	code_sec->Characteristics		|= IMAGE_SCN_MEM_WRITE;
+	code_sec->Misc.VirtualSize		+= gap + stub_size;
 
 	// relocation
 	IMAGE_DATA_DIRECTORY* data_reloc = &opt_h->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
 	data_reloc->Size = 0;
 	data_reloc->VirtualAddress = NULL;
 	// try to find relocation table
-	bool found = false;
-	IMAGE_SECTION_HEADER* reloc_h = reinterpret_cast<IMAGE_SECTION_HEADER*>(opt_h+1);
-	for (int i = 0; i < nt_h->FileHeader.NumberOfSections; ++i)
-		if (std::strcmp(reinterpret_cast<char*>(reloc_h->Name), ".reloc") == 0)
-		{
-			found = true;
-			break;
-		}
-		else
-		{
-			reloc_h->Characteristics |= IMAGE_SCN_MEM_WRITE;
-			reloc_h++;
-		}
 
-	if (found)
+	if (reloc_sec)
 	{
-		int reloc_begin_pi = opt_h->ImageBase + reloc_h->VirtualAddress;
+		int reloc_begin_pi = opt_h->ImageBase + reloc_sec->VirtualAddress;
 		std::memcpy(buffer.data() + nep_pf + 49, &reloc_begin_pi, 4);
-		std::memcpy(buffer.data() + nep_pf + 62, &reloc_h->Misc.VirtualSize, 4);
+		std::memcpy(buffer.data() + nep_pf + 62, &reloc_sec->Misc.VirtualSize, 4);
+
+		reloc_sec->Characteristics &= ~(IMAGE_SCN_MEM_DISCARDABLE);
 	} 
 	else
 	{
@@ -149,12 +186,14 @@ try
 	o_file.write(reinterpret_cast<char*>(buffer.data()), fs);
 
 	std::cout << "OK!\n";
+	wait_for_input();
 
 	return 0;
 }
 catch (std::exception& e)
 {
 	std::cout << "Exception: " << e.what() << std::endl;
+	wait_for_input();
 
 	return 1;
 }
