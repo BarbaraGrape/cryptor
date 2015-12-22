@@ -136,6 +136,10 @@ void set_flag_for_sections(IMAGE_NT_HEADERS* nt_h, uint32_t set_flags, uint32_t 
 		sec++;
 	}
 }
+void wait_for_input()
+{
+	system("PAUSE");
+}
 
 int main(void)
 try
@@ -174,6 +178,7 @@ try
 #error Can't calcute correct difference of functions address
 #endif
 	// crypt code section;
+
 	crypt_chunk(&buffer[code_sec->PointerToRawData], code_sec->SizeOfRawData, XOR_MASK);
 	/* 
 		rva - relative addres in mem
@@ -224,7 +229,6 @@ try
 	data_reloc->VirtualAddress = NULL;
 
 	set_flag_for_sections(nt_h, IMAGE_SCN_MEM_WRITE, IMAGE_SCN_MEM_DISCARDABLE);
-	//reloc_sec->Characteristics &= ~(IMAGE_SCN_MEM_DISCARDABLE);
 
 	//open file for output 
 	std::ofstream o_file(cryptorNewFilename, std::ofstream::binary | std::ofstream::out | std::ofstream::trunc);
@@ -232,12 +236,14 @@ try
 	o_file.write(reinterpret_cast<char*>(stub.data()), full_size);
 
 	std::cout << "OK!\n";
+	wait_for_input();
 
 	return 0;
 }
 catch (std::exception& e)
 {
 	std::cout << "Exception: " << e.what() << std::endl;
+	wait_for_input();
 
 	return 1;
 }
